@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: ASG & ELB
+Parameters:
+  VPC:
+    Type: String
+    Description: The vpc to launch the service
+    Default: vpc-ID
+  PublicSubnet1:
+    Type: String
+    Description: The subnet where to launch the service
+    Default: subnet-ID
+  PublicSubnet2:
+    Type: String
+    Description: the subnet where to Launch the service
+    Default: subnet-ID
+Resources:    
+  Ec2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access via port 22
+      VpcId: vpc-0d282f160cd7b46d3
+      SecurityGroupIngress:
+      - CidrIp: 0.0.0.0/0
+        FromPort: 80
+        IpProtocol: tcp
+        ToPort: 80  
+        
+      - CidrIp: 0.0.0.0/0
+        FromPort: 22
+        IpProtocol: tcp
+        ToPort: 22
+        
+      - CidrIp: 0.0.0.0/0
+        FromPort: -1
+        IpProtocol: ICMP
+        ToPort: -1
+  LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: ami-0742b4e673072066f
+      InstanceType: t2.micro
+      SecurityGroups:
+        - !Ref Ec2SecurityGroup 
+      UserData: 
+        Fn::Base64: !Sub |
+           #!/bin/bash 
+            sudo amazon-linux-extras install nginx1 -y
+            sudo systemctl start nginx.service
+            sudo systemctl status nginx.service
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: "test-Application-Load-Balancer"
+      Scheme: "internet-facing"
+      Type: "application"
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref Ec2SecurityGroup
+  LoadBalancerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 80
+      Protocol: HTTP
+      VpcId: vpc-0d282f160cd7b46d3
+  LoadBalancerHttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref LoadBalancerTargetGroup
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName:  "Autoscaling Group joms"
+      MaxSize: "4"
+      MinSize: "2"
+      DesiredCapacity: "2"
+      HealthCheckGracePeriod:  "60"
+      LaunchConfigurationName: !Ref LaunchConfiguration
+      VPCZoneIdentifier:
+        - !FindInMap [Environments, !Ref Environment, Subnet1]
+        - !FindInMap [Environments, !Ref Environment, Subnet2]      
+      TargetGroupARNs:
+        - !Ref LoadBalancerTargetGroup
